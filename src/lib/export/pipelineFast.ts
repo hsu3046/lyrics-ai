@@ -128,10 +128,29 @@ export async function exportLyricsVideoFast(
 
   // ── 2. Audio decode ──
   const decodeCtx = new AudioContext();
-  const audioBuffer = await decodeCtx.decodeAudioData(
+  let audioBuffer = await decodeCtx.decodeAudioData(
     await project.song.audioBlob.arrayBuffer(),
   );
   await decodeCtx.close();
+
+  // AAC encoder 는 44100 / 48000 만 지원 — 다른 rate 면 OfflineAudioContext 로 resample
+  const AAC_SUPPORTED = new Set([44100, 48000]);
+  if (!AAC_SUPPORTED.has(audioBuffer.sampleRate)) {
+    const targetRate = 48000;
+    const targetLength = Math.ceil(
+      (audioBuffer.length * targetRate) / audioBuffer.sampleRate,
+    );
+    const offlineCtx = new OfflineAudioContext(
+      audioBuffer.numberOfChannels,
+      targetLength,
+      targetRate,
+    );
+    const src = offlineCtx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(offlineCtx.destination);
+    src.start(0);
+    audioBuffer = await offlineCtx.startRendering();
+  }
 
   const sampleRate = audioBuffer.sampleRate;
   const numberOfChannels = audioBuffer.numberOfChannels;
@@ -208,7 +227,10 @@ export async function exportLyricsVideoFast(
       muxer.addVideoChunk(chunk, meta as EncodedVideoChunkMetadata | undefined),
     error: (e) => {
       videoEncoderError = e;
-      console.error("[fast-export] video encoder error:", e);
+      // abort 후 close() 가 trigger 한 에러는 무시
+      if (!signal?.aborted) {
+        console.error("[fast-export] video encoder error:", e);
+      }
     },
   });
   videoEncoder.configure({ codec: chosenCodec, ...baseConfig });
@@ -220,7 +242,9 @@ export async function exportLyricsVideoFast(
       muxer.addAudioChunk(chunk, meta as EncodedAudioChunkMetadata | undefined),
     error: (e) => {
       audioEncoderError = e;
-      console.error("[fast-export] audio encoder error:", e);
+      if (!signal?.aborted) {
+        console.error("[fast-export] audio encoder error:", e);
+      }
     },
   });
   audioEncoder.configure({

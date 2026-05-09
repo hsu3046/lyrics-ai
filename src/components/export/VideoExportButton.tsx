@@ -1,6 +1,6 @@
 "use client";
 
-import { Video } from "lucide-react";
+import { RectangleHorizontal, RectangleVertical, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -35,11 +34,14 @@ import type { Project } from "@/lib/types";
 
 type Resolution = "1080x1920" | "720x1280" | "1920x1080" | "1280x720";
 
-const RESOLUTION_LABELS: Record<Resolution, string> = {
-  "1080x1920": "세로 1080×1920 (FHD)",
-  "720x1280": "세로 720×1280 (HD)",
-  "1920x1080": "가로 1920×1080 (FHD)",
-  "1280x720": "가로 1280×720 (HD)",
+const RESOLUTION_META: Record<
+  Resolution,
+  { orientation: "vertical" | "horizontal"; label: string }
+> = {
+  "1080x1920": { orientation: "vertical", label: "1080×1920" },
+  "720x1280": { orientation: "vertical", label: "720×1280" },
+  "1920x1080": { orientation: "horizontal", label: "1920×1080" },
+  "1280x720": { orientation: "horizontal", label: "1280×720" },
 };
 
 function safeFilename(name: string): string {
@@ -76,12 +78,8 @@ export function VideoExportButton({ project }: { project: Project }) {
     pct: 0,
   });
   const [resolution, setResolution] = useState<Resolution>("1080x1920");
-  const [fastMode, setFastMode] = useState<boolean>(() =>
-    isFastExportSupported(),
-  );
   const abortRef = useRef<AbortController | null>(null);
 
-  const fastSupported = isFastExportSupported();
   const lineCount = project.lyrics.lines.length;
   const disabled = lineCount === 0;
 
@@ -94,7 +92,8 @@ export function VideoExportButton({ project }: { project: Project }) {
     abortRef.current = new AbortController();
 
     try {
-      const useFast = fastMode && fastSupported;
+      // WebCodecs 지원 환경에선 항상 fast (mp4), 아니면 realtime (webm)
+      const useFast = isFastExportSupported();
       const { blob, extension } = useFast
         ? await exportLyricsVideoFast({
             project,
@@ -128,11 +127,12 @@ export function VideoExportButton({ project }: { project: Project }) {
       toast.success(`다운로드 — ${filename}`, { id: "video-export" });
       setOpen(false);
     } catch (e) {
-      console.error("[video-export]", e);
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === "aborted") {
+        // 사용자 취소 — 에러 아님
         toast.info("취소됨", { id: "video-export" });
       } else {
+        console.error("[video-export]", e);
         toast.error("영상 export 실패", {
           id: "video-export",
           description: msg,
@@ -186,53 +186,53 @@ export function VideoExportButton({ project }: { project: Project }) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>영상 생성</DialogTitle>
+          <DialogDescription className="sr-only">
+            해상도와 포맷을 선택해 가사 영상을 생성합니다
+          </DialogDescription>
         </DialogHeader>
 
         {!busy ? (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="res-select">해상도</Label>
-              <Select
-                value={resolution}
-                onValueChange={(v) => setResolution(v as Resolution)}
-              >
-                <SelectTrigger id="res-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(RESOLUTION_LABELS) as Resolution[]).map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {RESOLUTION_LABELS[r]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={resolution}
+                  onValueChange={(v) => setResolution(v as Resolution)}
+                >
+                  <SelectTrigger id="res-select" className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(RESOLUTION_META) as Resolution[]).map((r) => {
+                      const m = RESOLUTION_META[r];
+                      const Icon =
+                        m.orientation === "vertical"
+                          ? RectangleVertical
+                          : RectangleHorizontal;
+                      return (
+                        <SelectItem key={r} value={r}>
+                          <span className="flex items-center gap-2">
+                            <Icon className="size-4 text-muted-foreground" />
+                            {m.label}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={run}
+                  disabled={disabled}
+                  className="min-w-32"
+                >
+                  시작
+                </Button>
+              </div>
             </div>
-            {fastSupported ? (
-              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/60 bg-muted/30 p-3">
-                <input
-                  type="checkbox"
-                  checked={fastMode}
-                  onChange={(e) => setFastMode(e.target.checked)}
-                  className="mt-0.5 size-4 cursor-pointer"
-                />
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">
-                    고속 모드 (5-10× 빠름)
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    WebCodecs 직접 인코딩 — 3분 곡 ≈ 30-60초. mp4 출력.
-                  </span>
-                </div>
-              </label>
-            ) : (
+            {!isFastExportSupported() && (
               <p className="text-xs text-muted-foreground">
-                ⚠ 이 브라우저는 고속 모드 미지원. realtime 캡처 (3분 곡 ≈ 3분).
-              </p>
-            )}
-            {fastSupported && !fastMode && (
-              <p className="text-xs text-muted-foreground">
-                ⚠ realtime 모드 — 곡 전체 길이만큼 시간 소요. 탭 활성 유지.
+                ⚠ 이 브라우저는 고속 인코딩 미지원 — realtime 캡처로 진행 (곡 길이만큼 시간 소요, 탭 활성 유지). webm 출력.
               </p>
             )}
           </div>
@@ -260,14 +260,6 @@ export function VideoExportButton({ project }: { project: Project }) {
             </div>
           </div>
         )}
-
-        <DialogFooter>
-          {!busy && (
-            <Button onClick={run} disabled={disabled}>
-              시작
-            </Button>
-          )}
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

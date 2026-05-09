@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -104,6 +105,9 @@ export function EditSongMetaDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>노래 정보 수정</DialogTitle>
+          <DialogDescription className="sr-only">
+            제목, 아티스트, 앨범 커버 이미지를 수정합니다
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col items-center gap-3">
