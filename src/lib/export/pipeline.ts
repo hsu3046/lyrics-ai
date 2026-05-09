@@ -1,7 +1,7 @@
 "use client";
 
+import fixWebmDuration from "fix-webm-duration";
 import { LyricsCanvasRenderer } from "@/lib/export/canvasRenderer";
-import { findActiveLineIndex } from "@/lib/player/syncEngine";
 import type { Project } from "@/lib/types";
 
 export type ExportProgress = {
@@ -129,7 +129,7 @@ export async function exportLyricsVideo(
   // 첫 프레임 미리 그림 (recorder 시작 전 하나라도 있어야 빈 화면 회피)
   renderer.drawFrame({
     lines,
-    activeIdx: findActiveLineIndex(lines, 0),
+    currentMs: 0,
     song: { title: project.song.title, artist: project.song.artist },
   });
 
@@ -150,10 +150,9 @@ export async function exportLyricsVideo(
         0,
         (audioCtx.currentTime - startCtxTime) * 1000,
       );
-      const activeIdx = findActiveLineIndex(lines, elapsedMs);
       renderer.drawFrame({
         lines,
-        activeIdx,
+        currentMs: elapsedMs,
         song: { title: project.song.title, artist: project.song.artist },
       });
       onProgress?.({
@@ -189,8 +188,18 @@ export async function exportLyricsVideo(
 
   cleanup();
 
-  const blob = new Blob(chunks, { type: mimeType });
+  const rawBlob = new Blob(chunks, { type: mimeType });
   const isMp4 = mimeType.includes("mp4");
+
+  // webm 의 duration metadata 가 누락되어 Chrome 진행바가 망가지는
+  // 알려진 MediaRecorder 버그 (Chromium #642012). 후처리로 주입.
+  const blob = isMp4
+    ? rawBlob
+    : await fixWebmDuration(rawBlob, durationMs).catch((e) => {
+        console.warn("[video-export] fix-webm-duration failed:", e);
+        return rawBlob;
+      });
+
   return {
     blob,
     mimeType,

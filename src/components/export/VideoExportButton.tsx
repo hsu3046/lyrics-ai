@@ -110,24 +110,30 @@ export function VideoExportButton({ project }: { project: Project }) {
     }
   };
 
-  const cancel = () => {
-    if (busy) abortRef.current?.abort();
-    else setOpen(false);
-  };
-
   const stageLabel: Record<ExportProgress["stage"], string> = {
     preparing: "준비 중...",
-    recording: "녹화 중",
+    recording: "생성 중",
     finalizing: "마무리 중...",
   };
 
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      setOpen(true);
+      return;
+    }
+    // 닫기 시도 — busy 면 confirm
+    if (busy) {
+      const ok = window.confirm(
+        "영상 생성 중입니다. 정말 취소하시겠습니까?",
+      );
+      if (!ok) return;
+      abortRef.current?.abort();
+    }
+    setOpen(false);
+  };
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!busy) setOpen(v);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" disabled={disabled}>
           <Video className="size-4" />
@@ -137,9 +143,6 @@ export function VideoExportButton({ project }: { project: Project }) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>영상 다운로드</DialogTitle>
-          <DialogDescription>
-            앨범커버 + 가사 애니메이션 + 음악. 30fps webm (Safari 는 mp4).
-          </DialogDescription>
         </DialogHeader>
 
         {!busy ? (
@@ -179,9 +182,6 @@ export function VideoExportButton({ project }: { project: Project }) {
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={cancel}>
-            {busy ? "취소" : "닫기"}
-          </Button>
           {!busy && (
             <Button onClick={run} disabled={disabled}>
               시작

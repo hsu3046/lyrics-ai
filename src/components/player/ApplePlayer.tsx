@@ -13,6 +13,7 @@ import { EditableLyricsView } from "@/components/editor/EditableLyricsView";
 import { SrtExportButton } from "@/components/export/SrtExportButton";
 import { VideoExportButton } from "@/components/export/VideoExportButton";
 import { LyricsView } from "@/components/player/LyricsView";
+import { EditSongMetaDialog } from "@/components/song/EditSongMetaDialog";
 import { TranscribeButton } from "@/components/transcribe/TranscribeButton";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -45,6 +46,7 @@ export function ApplePlayer({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [metaDialogOpen, setMetaDialogOpen] = useState(false);
 
   useEffect(() => {
     useEditorStore.getState().setProject(project);
@@ -117,7 +119,12 @@ export function ApplePlayer({
               </Button>
             )}
             {hasLyrics && (
-              <>
+              <button
+                type="button"
+                onClick={() => setMetaDialogOpen(true)}
+                className="flex min-w-0 items-center gap-3 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/50"
+                title="노래 정보 수정"
+              >
                 {coverUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -138,7 +145,7 @@ export function ApplePlayer({
                     </span>
                   )}
                 </div>
-              </>
+              </button>
             )}
           </div>
           {onUpdate && (
@@ -198,6 +205,7 @@ export function ApplePlayer({
             coverUrl={coverUrl}
             title={project.song.title}
             artist={project.song.artist}
+            onEditMeta={() => setMetaDialogOpen(true)}
           />
         )}
       </main>
@@ -248,6 +256,15 @@ export function ApplePlayer({
           </div>
         </div>
       </footer>
+
+      {onUpdate && (
+        <EditSongMetaDialog
+          project={project}
+          open={metaDialogOpen}
+          onOpenChange={setMetaDialogOpen}
+          onUpdated={onUpdate}
+        />
+      )}
     </div>
   );
 }
@@ -256,14 +273,21 @@ function BigCoverContent({
   coverUrl,
   title,
   artist,
+  onEditMeta,
 }: {
   coverUrl: string | null;
   title: string;
   artist?: string;
+  onEditMeta?: () => void;
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6 py-6">
-      <div className="relative aspect-square w-full max-w-sm overflow-hidden rounded-3xl bg-zinc-800 shadow-2xl">
+      <button
+        type="button"
+        onClick={onEditMeta}
+        className="relative aspect-square w-full max-w-sm overflow-hidden rounded-3xl bg-zinc-800 shadow-2xl transition-opacity hover:opacity-90"
+        title="노래 정보 수정"
+      >
         {coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={coverUrl} alt={title} className="size-full object-cover" />
@@ -272,11 +296,16 @@ function BigCoverContent({
             No cover
           </div>
         )}
-      </div>
-      <div className="flex flex-col items-center gap-1 text-center">
+      </button>
+      <button
+        type="button"
+        onClick={onEditMeta}
+        className="flex flex-col items-center gap-1 rounded-md px-3 py-1 text-center transition-colors hover:bg-muted/30"
+        title="노래 정보 수정"
+      >
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {artist && <p className="text-base text-muted-foreground">{artist}</p>}
-      </div>
+      </button>
     </div>
   );
 }

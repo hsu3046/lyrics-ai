@@ -7,6 +7,10 @@ export type RenderOptions = {
   height: number;
 };
 
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const smoothstep = (t: number) => t * t * (3 - 2 * t);
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
 export type SongLabel = {
   title: string;
   artist?: string;
@@ -64,9 +68,56 @@ export class LyricsCanvasRenderer {
     }
   }
 
+  /**
+   * 현재 시간 기준 "효과적인 표시 인덱스" — float.
+   * - 라인 안: 그 라인의 정수 인덱스
+   * - 라인 끝 ~ 다음 라인 시작 사이 (gap): smoothstep 으로 i → i+1 보간
+   * - 첫 라인 시작 전: 첫 라인 직전 fadeMs 동안 -1 → 0 보간
+   *
+   * float 인덱스 → 모든 라인의 시각적 위치/투명도/폰트가 부드러운 transition.
+   */
+  private computeEffectiveIdx(lines: LyricLine[], tMs: number): number {
+    if (lines.length === 0) return 0;
+    const FADE_LEAD_MS = 500;
+
+    // 1) 현재 라인 안에 있나
+    for (let i = 0; i < lines.length; i++) {
+      if (tMs >= lines[i].startMs && tMs < lines[i].endMs) return i;
+    }
+
+    // 2) 첫 라인 시작 전
+    if (tMs < lines[0].startMs) {
+      const lead = lines[0].startMs - tMs;
+      if (lead <= FADE_LEAD_MS) {
+        const p = (FADE_LEAD_MS - lead) / FADE_LEAD_MS;
+        return -1 + smoothstep(Math.max(0, Math.min(1, p)));
+      }
+      return -1;
+    }
+
+    // 3) gap — 직전 라인 i 와 next i+1 사이 보간
+    let baseIdx = lines.length - 1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].endMs <= tMs) {
+        baseIdx = i;
+        break;
+      }
+    }
+    const next = lines[baseIdx + 1];
+    if (!next) return baseIdx;
+
+    const transitionStart = lines[baseIdx].endMs;
+    const transitionEnd = next.startMs;
+    if (tMs <= transitionStart) return baseIdx;
+    if (tMs >= transitionEnd) return baseIdx + 1;
+
+    const p = (tMs - transitionStart) / (transitionEnd - transitionStart);
+    return baseIdx + smoothstep(Math.max(0, Math.min(1, p)));
+  }
+
   drawFrame(opts: {
     lines: LyricLine[];
-    activeIdx: number;
+    currentMs: number;
     song: SongLabel;
   }): void {
     const { ctx } = this;
@@ -83,66 +134,175 @@ export class LyricsCanvasRenderer {
       ctx.globalAlpha = 1;
     }
 
-    // 3. 앨범커버 — 화면 위쪽 1/3 영역에 정사각형
+    const isLandscape = width > height;
+    if (isLandscape) {
+      this.drawLandscape(opts);
+    } else {
+      this.drawPortrait(opts);
+    }
+  }
+
+  // ─── 세로: 위 cover + 아래 가사 ───
+  private drawPortrait(opts: {
+    lines: LyricLine[];
+    currentMs: number;
+    song: SongLabel;
+  }): void {
+    const { ctx } = this;
+    const { width, height } = this.opts;
+
     const coverSize = Math.min(width, height) * 0.5;
     const coverX = (width - coverSize) / 2;
     const coverY = height * 0.08;
+    this.drawCover(coverX, coverY, coverSize);
+
+    const titleY = coverY + coverSize + Math.round(width * 0.06);
+    this.drawTitle(opts.song, width / 2, titleY, width * 0.85, width);
+
+    const lyricCenterY = titleY + Math.round(width * 0.22);
+    this.drawLyrics(opts, {
+      centerX: width / 2,
+      centerY: lyricCenterY,
+      maxWidth: width * 0.9,
+      activeFont: Math.round(width * 0.04),
+      inactiveFont: Math.round(width * 0.026),
+      align: "center",
+    });
+  }
+
+  // ─── 가로: 좌 cover + 우 가사 (2 컬럼) ───
+  private drawLandscape(opts: {
+    lines: LyricLine[];
+    currentMs: number;
+    song: SongLabel;
+  }): void {
+    const { width, height } = this.opts;
+
+    // 좌측 컬럼: cover + title/artist (가운데 정렬)
+    const leftColW = width * 0.45;
+    const coverSize = Math.min(leftColW * 0.7, height * 0.6);
+    const coverX = (leftColW - coverSize) / 2;
+    const coverY = (height - coverSize) / 2 - height * 0.06;
+    this.drawCover(coverX, coverY, coverSize);
+
+    const titleY = coverY + coverSize + Math.round(height * 0.05);
+    this.drawTitle(
+      opts.song,
+      leftColW / 2,
+      titleY,
+      leftColW * 0.85,
+      Math.min(leftColW, height),
+    );
+
+    // 우측 컬럼: 가사 (좌측 정렬, 세로 가운데)
+    const rightX = leftColW;
+    const rightW = width - leftColW;
+    const lyricCenterY = height / 2;
+    const lyricBaseSize = Math.min(rightW, height);
+
+    this.drawLyrics(opts, {
+      centerX: rightX + rightW / 2,
+      centerY: lyricCenterY,
+      maxWidth: rightW * 0.85,
+      activeFont: Math.round(lyricBaseSize * 0.045),
+      inactiveFont: Math.round(lyricBaseSize * 0.028),
+      align: "center",
+    });
+  }
+
+  private drawCover(x: number, y: number, size: number): void {
+    const ctx = this.ctx;
     if (this.coverImg) {
       ctx.save();
-      this.roundedPath(coverX, coverY, coverSize, coverSize, coverSize * 0.04);
+      this.roundedPath(x, y, size, size, size * 0.04);
       ctx.clip();
-      ctx.drawImage(this.coverImg, coverX, coverY, coverSize, coverSize);
+      ctx.drawImage(this.coverImg, x, y, size, size);
       ctx.restore();
     } else {
       ctx.fillStyle = "#262626";
-      this.roundedPath(coverX, coverY, coverSize, coverSize, coverSize * 0.04);
+      this.roundedPath(x, y, size, size, size * 0.04);
       ctx.fill();
     }
+  }
 
-    // 4. 제목 / 아티스트
-    const baseFontSize = Math.round(width * 0.038);
-    const titleY = coverY + coverSize + Math.round(width * 0.06);
+  private drawTitle(
+    song: SongLabel,
+    cx: number,
+    y: number,
+    maxWidth: number,
+    sizingDim: number,
+  ): void {
+    const ctx = this.ctx;
+    const titleSize = Math.round(sizingDim * 0.05);
+    const artistSize = Math.round(sizingDim * 0.032);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${baseFontSize}px ${FALLBACK_FONT_STACK}`;
-    ctx.fillText(opts.song.title, width / 2, titleY, width * 0.85);
+    ctx.font = `700 ${titleSize}px ${FALLBACK_FONT_STACK}`;
+    ctx.fillText(song.title, cx, y, maxWidth);
 
-    if (opts.song.artist) {
-      const artistFont = Math.round(width * 0.024);
-      ctx.font = `400 ${artistFont}px ${FALLBACK_FONT_STACK}`;
+    if (song.artist) {
+      ctx.font = `400 ${artistSize}px ${FALLBACK_FONT_STACK}`;
       ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.fillText(
-        opts.song.artist,
-        width / 2,
-        titleY + Math.round(width * 0.05),
-        width * 0.85,
-      );
+      ctx.fillText(song.artist, cx, y + Math.round(titleSize * 1.4), maxWidth);
     }
+  }
 
-    // 5. 가사 — active ±2 라인
-    const lyricCenterY = titleY + Math.round(width * 0.22);
-    const activeFontSize = Math.round(width * 0.04);
-    const inactiveFontSize = Math.round(width * 0.026);
-    const lineGap = activeFontSize * 1.6;
+  private drawLyrics(
+    opts: {
+      lines: LyricLine[];
+      currentMs: number;
+    },
+    layout: {
+      centerX: number;
+      centerY: number;
+      maxWidth: number;
+      activeFont: number;
+      inactiveFont: number;
+      align: CanvasTextAlign;
+    },
+  ): void {
+    const ctx = this.ctx;
+    const effectiveIdx = this.computeEffectiveIdx(opts.lines, opts.currentMs);
+    const lineGap = layout.activeFont * 1.6;
+    const RANGE = 3.5;
 
-    for (let offset = -2; offset <= 2; offset++) {
-      const idx = opts.activeIdx + offset;
-      if (idx < 0 || idx >= opts.lines.length) continue;
-      const line = opts.lines[idx];
+    ctx.textAlign = layout.align;
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < opts.lines.length; i++) {
+      const line = opts.lines[i];
       if (!line.text.trim()) continue;
-      const isActive = offset === 0;
-      const y = lyricCenterY + offset * lineGap;
 
-      const fontSize = isActive ? activeFontSize : inactiveFontSize;
-      const weight = isActive ? 700 : 400;
+      const offset = i - effectiveIdx;
       const distance = Math.abs(offset);
-      const alpha = isActive ? 1 : Math.max(0.15, 0.5 - distance * 0.15);
+      if (distance > RANGE) continue; // 화면 밖
+
+      // activity: 0 (inactive 멀리) → 1 (정중앙 active). 부드러운 보간.
+      const activity = clamp01(1 - distance);
+
+      // y 위치 — float offset 으로 부드러운 vertical scroll
+      const y = layout.centerY + offset * lineGap;
+
+      // font size 보간
+      const fontSize = lerp(layout.inactiveFont, layout.activeFont, activity);
+
+      // weight — 50% 임계로 bold/regular (canvas 는 정수 weight 만)
+      const weight = activity > 0.5 ? 700 : 400;
+
+      // alpha — distance 0~1 = 0.4~1.0, distance 1~3.5 = 0.4~0.05 점진 fade
+      let alpha: number;
+      if (distance <= 1) {
+        alpha = lerp(0.4, 1, activity); // distance 0→1, distance 1→0.4
+      } else {
+        const farT = clamp01((distance - 1) / 2.5);
+        alpha = lerp(0.4, 0.05, farT);
+      }
 
       ctx.font = `${weight} ${fontSize}px ${FALLBACK_FONT_STACK}`;
       ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      ctx.fillText(line.text, width / 2, y, width * 0.9);
+      ctx.fillText(line.text, layout.centerX, y, layout.maxWidth);
     }
   }
 

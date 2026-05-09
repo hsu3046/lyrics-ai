@@ -22,6 +22,7 @@
     "@remotion/captions": "^4.0.459",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fix-webm-duration": "^1.0.6",
     "idb-keyval": "^6.2.2",
     "immer": "^11.1.8",
     "lucide-react": "^0.574.0",
