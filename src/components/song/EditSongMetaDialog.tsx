@@ -13,19 +13,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { saveProject } from "@/lib/persistence/projects";
+import { useEditorStore } from "@/lib/editor/store";
 import type { Project } from "@/lib/types";
 
 export function EditSongMetaDialog({
   project,
   open,
   onOpenChange,
-  onUpdated,
 }: {
   project: Project;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onUpdated: (p: Project) => void;
 }) {
   const [title, setTitle] = useState(project.song.title);
   const [artist, setArtist] = useState(project.song.artist ?? "");
@@ -34,6 +32,7 @@ export function EditSongMetaDialog({
   );
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // dialog open 시 기존 값으로 reset
@@ -56,8 +55,9 @@ export function EditSongMetaDialog({
   }, [coverBlob]);
 
   const handleFile = (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("이미지 파일만 가능합니다");
+    // SVG 는 script 실행 가능 — raster 만 허용
+    if (!/^image\/(jpeg|png|gif|webp|bmp)$/i.test(file.type)) {
+      toast.error("JPEG/PNG/GIF/WebP/BMP 만 가능합니다");
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -76,18 +76,13 @@ export function EditSongMetaDialog({
     setBusy(true);
     try {
       const trimmedArtist = artist.trim();
-      const updated: Project = {
-        ...project,
-        song: {
-          ...project.song,
-          title: title.trim(),
-          artist: trimmedArtist || undefined,
-          coverImageBlob: coverBlob,
-        },
-      };
-      await saveProject(updated);
+      useEditorStore.getState().setSong({
+        ...project.song,
+        title: title.trim(),
+        artist: trimmedArtist || undefined,
+        coverImageBlob: coverBlob,
+      });
       toast.success("노래 정보가 저장되었습니다");
-      onUpdated(updated);
       onOpenChange(false);
     } catch (e) {
       console.error("[meta-edit]", e);
@@ -116,7 +111,21 @@ export function EditSongMetaDialog({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="relative size-32 overflow-hidden rounded-lg bg-muted transition-opacity hover:opacity-80"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) handleFile(f);
+                }}
+                className={`relative size-32 overflow-hidden rounded-lg bg-muted transition-all hover:opacity-80 ${
+                  dragOver ? "ring-2 ring-ring ring-offset-2" : ""
+                }`}
                 aria-label="커버 이미지 변경"
               >
                 {coverUrl ? (
@@ -148,7 +157,7 @@ export function EditSongMetaDialog({
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/bmp"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -157,7 +166,7 @@ export function EditSongMetaDialog({
               }}
             />
             <p className="text-xs text-muted-foreground">
-              이미지 클릭으로 변경 (최대 10MB)
+              클릭 또는 드래그&드롭 (최대 10MB)
             </p>
           </div>
 

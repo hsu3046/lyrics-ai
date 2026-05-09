@@ -33,8 +33,13 @@ export function LineEditRow({
   const commitStart = (text: string) => {
     setStartEdit(null);
     const ms = parseTimecode(text);
-    if (ms === null) {
+    if (ms === null || ms < 0) {
       toast.error("시간 형식 오류 (MM:SS.mmm)");
+      return;
+    }
+    const dur = useEditorStore.getState().project?.song.durationMs ?? Infinity;
+    if (ms > dur) {
+      toast.error("시간이 노래 길이를 초과합니다");
       return;
     }
     if (ms >= line.endMs) {
@@ -47,8 +52,13 @@ export function LineEditRow({
   const commitEnd = (text: string) => {
     setEndEdit(null);
     const ms = parseTimecode(text);
-    if (ms === null) {
+    if (ms === null || ms < 0) {
       toast.error("시간 형식 오류 (MM:SS.mmm)");
+      return;
+    }
+    const dur = useEditorStore.getState().project?.song.durationMs ?? Infinity;
+    if (ms > dur) {
+      toast.error("시간이 노래 길이를 초과합니다");
       return;
     }
     if (ms <= line.startMs) {
@@ -80,6 +90,9 @@ export function LineEditRow({
   const timeInputKeyDown =
     (commit: (text: string) => void, reset: () => void) =>
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // IME 조합중 Enter — 마지막 글자 잔존 함정 (한/일/중)
+      const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+      if (composing) return;
       if (e.key === "Enter") {
         e.preventDefault();
         commit(e.currentTarget.value);

@@ -19,7 +19,8 @@ export async function extractMetadata(file: File): Promise<ExtractedMeta> {
 
   let coverImageBlob: Blob | undefined;
   const cover = picture?.[0];
-  if (cover) {
+  // SVG 는 임의 script 실행 가능 — raster 만 허용 (untrusted ID3 attachment)
+  if (cover && /^image\/(jpeg|png|gif|webp|bmp)$/i.test(cover.format)) {
     const arr = new Uint8Array(cover.data);
     coverImageBlob = new Blob([arr], { type: cover.format });
   }

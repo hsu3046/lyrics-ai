@@ -2,36 +2,7 @@ import { ulid } from "ulid";
 import type { LyricLine, Word } from "@/lib/types";
 import type { SttResult } from "./types";
 
-// ── gpt-4o-transcribe-diarize: diarized_json 응답 ──
-type DiarizedSegment = {
-  text: string;
-  start: number;
-  end: number;
-  speaker?: string;
-};
-export type DiarizedResponse = {
-  segments: DiarizedSegment[];
-  language?: string;
-  duration?: number;
-};
-
-/** Convert gpt-4o-transcribe-diarize diarized_json → LyricLine[]. Segment-level only. */
-export function normalizeDiarized(resp: DiarizedResponse): SttResult {
-  const lines: LyricLine[] = (resp.segments ?? [])
-    .filter((s) => s.text && s.text.trim().length > 0)
-    .map((s) => ({
-      id: ulid(),
-      text: s.text.trim(),
-      startMs: Math.round(s.start * 1000),
-      endMs: Math.round(s.end * 1000),
-      words: [],
-      speaker: s.speaker ?? null,
-      language: null,
-    }));
-  return { lines, detectedLanguage: resp.language };
-}
-
-// ── whisper-1: verbose_json 응답 (legacy, kept for fallback) ──
+// ── whisper-1: verbose_json 응답 ──
 
 type WhisperWord = { word: string; start: number; end: number };
 type WhisperSegment = {

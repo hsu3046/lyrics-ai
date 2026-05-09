@@ -27,11 +27,7 @@ export type LyricLine = {
   language?: Language | null;
 };
 
-export type SttModelId =
-  | "openai-whisper-1"
-  | "openai-gpt4o-diarize"
-  | "elevenlabs-scribe-v2"
-  | "gemini-flash-preview";
+export type SttModelId = "openai-whisper-1";
 
 export type Lyrics = {
   lines: LyricLine[];

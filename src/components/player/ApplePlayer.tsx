@@ -9,6 +9,7 @@ import {
   SquarePen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { EditableLyricsView } from "@/components/editor/EditableLyricsView";
 import { SrtExportButton } from "@/components/export/SrtExportButton";
 import { VideoExportButton } from "@/components/export/VideoExportButton";
@@ -20,7 +21,11 @@ import { Slider } from "@/components/ui/slider";
 import { SrtImportButton } from "@/components/upload/SrtImportButton";
 import { useActiveLineIndex } from "@/hooks/useActiveLineIndex";
 import { useAudioPlayback } from "@/hooks/useAudioPlayback";
-import { subscribeProjectSaves, useEditorStore } from "@/lib/editor/store";
+import {
+  subscribeAutosaveErrors,
+  subscribeProjectSaves,
+  useEditorStore,
+} from "@/lib/editor/store";
 import type { LyricLine, Project } from "@/lib/types";
 import { formatTimecode } from "@/lib/utils/time";
 
@@ -58,6 +63,22 @@ export function ApplePlayer({
       if (p.id === project.id) onUpdate(p);
     });
   }, [onUpdate, project.id]);
+
+  useEffect(() => {
+    return subscribeAutosaveErrors((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isQuota =
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      toast.error(isQuota ? "저장 공간 부족" : "자동 저장 실패", {
+        id: "autosave-err",
+        description: isQuota
+          ? "브라우저 저장 공간이 가득 찼습니다. 다른 프로젝트를 정리하세요."
+          : msg,
+      });
+    });
+  }, []);
 
   const storeLines = useEditorStore((s) => s.project?.lyrics.lines);
   const lines: LyricLine[] = storeLines ?? project.lyrics.lines;
@@ -150,7 +171,7 @@ export function ApplePlayer({
           </div>
           {onUpdate && (
             <div className="flex flex-wrap items-center gap-1">
-              <TranscribeButton project={project} onUpdated={onUpdate} />
+              <TranscribeButton project={project} />
               {hasLyrics && (
                 <Button
                   variant={editMode ? "default" : "ghost"}
@@ -158,10 +179,18 @@ export function ApplePlayer({
                   onClick={() => setEditMode((v) => !v)}
                 >
                   <SquarePen className="size-4" />
-                  {editMode ? "편집 완료" : "가사 편집"}
+                  {editMode ? (
+                    <>
+                      <span className="hidden sm:inline">수정 </span>완료
+                    </>
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline">가사 </span>수정
+                    </>
+                  )}
                 </Button>
               )}
-              <SrtImportButton project={project} onImported={onUpdate} />
+              <SrtImportButton project={project} />
               {hasLyrics && (
                 <>
                   <SrtExportButton
@@ -262,7 +291,6 @@ export function ApplePlayer({
           project={project}
           open={metaDialogOpen}
           onOpenChange={setMetaDialogOpen}
-          onUpdated={onUpdate}
         />
       )}
     </div>

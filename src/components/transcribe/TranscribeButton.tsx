@@ -4,20 +4,14 @@ import { WandSparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useEditorStore } from "@/lib/editor/store";
 import { getApiKey, setApiKey } from "@/lib/persistence/apiKeys";
-import { saveProject } from "@/lib/persistence/projects";
 import { getAdapter } from "@/lib/stt";
 import type { Project } from "@/lib/types";
 
 const MODEL_ID = "openai-whisper-1";
 
-export function TranscribeButton({
-  project,
-  onUpdated,
-}: {
-  project: Project;
-  onUpdated: (p: Project) => void;
-}) {
+export function TranscribeButton({ project }: { project: Project }) {
   const [busy, setBusy] = useState(false);
 
   const run = async () => {
@@ -65,22 +59,15 @@ export function TranscribeButton({
         language: "auto",
         apiKey,
       });
-      const updated: Project = {
-        ...project,
-        lyrics: {
-          ...project.lyrics,
-          lines: result.lines,
-          source: "stt",
-          sttModel: MODEL_ID,
-          language: "auto",
-        },
-      };
-      await saveProject(updated);
+      useEditorStore.getState().replaceLyrics(result.lines, {
+        source: "stt",
+        sttModel: MODEL_ID,
+        language: "auto",
+      });
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
       toast.success(`${result.lines.length} 줄 생성 (${elapsed}s)`, {
         id: "transcribe",
       });
-      onUpdated(updated);
     } catch (e) {
       console.error("[transcribe]", e);
       const msg = e instanceof Error ? e.message : String(e);
@@ -103,7 +90,13 @@ export function TranscribeButton({
   return (
     <Button variant="ghost" size="sm" onClick={run} disabled={busy}>
       <WandSparkles className="size-4" />
-      {busy ? "생성 중..." : "가사 생성"}
+      {busy ? (
+        "인식 중..."
+      ) : (
+        <>
+          <span className="hidden sm:inline">가사 </span>인식
+        </>
+      )}
     </Button>
   );
 }

@@ -65,10 +65,16 @@ export async function exportLyricsVideo(
   );
   const source = audioCtx.createBufferSource();
   source.buffer = audioBuffer;
+
+  // AnalyserNode — frequency 시각화용
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.85;
+  const freqData = new Uint8Array(analyser.frequencyBinCount); // 256
+
   const audioDest = audioCtx.createMediaStreamDestination();
-  source.connect(audioDest);
-  // user 도 듣게 하려면 audioCtx.destination 도 연결, 단 export 시 보통 무음
-  // source.connect(audioCtx.destination);
+  source.connect(analyser);
+  analyser.connect(audioDest);
 
   const durationMs = audioBuffer.duration * 1000;
   const lines = project.lyrics.lines;
@@ -150,10 +156,12 @@ export async function exportLyricsVideo(
         0,
         (audioCtx.currentTime - startCtxTime) * 1000,
       );
+      analyser.getByteFrequencyData(freqData);
       renderer.drawFrame({
         lines,
         currentMs: elapsedMs,
         song: { title: project.song.title, artist: project.song.artist },
+        frequencyData: freqData,
       });
       onProgress?.({
         stage: "recording",

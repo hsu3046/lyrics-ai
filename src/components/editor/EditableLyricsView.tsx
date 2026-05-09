@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Redo2, Undo2 } from "lucide-react";
-import { useEffect } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LineEditRow } from "@/components/editor/LineEditRow";
 import { Button } from "@/components/ui/button";
 import { useEditorStore, useUndoRedo } from "@/lib/editor/store";
@@ -25,26 +25,21 @@ export function EditableLyricsView({
   const pastStates = useUndoRedo((t) => t.pastStates);
   const futureStates = useUndoRedo((t) => t.futureStates);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const inField =
-        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
-      if (inField) return;
-
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && (e.key === "z" || e.key === "Z")) {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo]);
+  // window 가 아닌 root 에 keydown — editor 가 active 일 때만 동작 (다른 view 와 충돌 X)
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const meta = e.metaKey || e.ctrlKey;
+    if (!meta || (e.key !== "z" && e.key !== "Z")) return;
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+  };
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
+    <div
+      className="flex flex-col gap-2 px-4 py-3 outline-none"
+      onKeyDown={onKeyDown}
+      tabIndex={-1}
+    >
       <div className="flex items-center justify-center gap-1 border-b border-border/50 pb-2">
         <Button
           variant="ghost"

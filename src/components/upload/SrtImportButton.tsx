@@ -4,17 +4,11 @@ import { FileUp } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { saveProject } from "@/lib/persistence/projects";
+import { useEditorStore } from "@/lib/editor/store";
 import { parseSrtToLines } from "@/lib/srt/parse";
 import type { Project } from "@/lib/types";
 
-export function SrtImportButton({
-  project,
-  onImported,
-}: {
-  project: Project;
-  onImported: (p: Project) => void;
-}) {
+export function SrtImportButton({ project }: { project: Project }) {
   const handle = useCallback(
     async (file: File) => {
       try {
@@ -33,18 +27,16 @@ export function SrtImportButton({
         }
         const lastEnd = lines[lines.length - 1].endMs;
         const audioMs = project.song.durationMs;
-        if (audioMs && Math.abs(audioMs - lastEnd) > 5000) {
+        // SRT 가 오디오보다 길면 다른 파일 의심 (반대로 짧은 건 outro/묵음 — 정상)
+        if (audioMs && lastEnd > audioMs + 1000) {
           toast.warning(
-            `SRT 길이(${(lastEnd / 1000).toFixed(1)}s)와 오디오(${(audioMs / 1000).toFixed(1)}s) 차이 5초 이상`,
+            `SRT 끝(${(lastEnd / 1000).toFixed(1)}s)이 오디오(${(audioMs / 1000).toFixed(1)}s)보다 깁니다 — 다른 파일일 수 있습니다`,
           );
         }
-        const updated: Project = {
-          ...project,
-          lyrics: { ...project.lyrics, lines, source: "srt-import" },
-        };
-        await saveProject(updated);
+        useEditorStore
+          .getState()
+          .replaceLyrics(lines, { source: "srt-import" });
         toast.success(`SRT import — ${lines.length} 줄`);
-        onImported(updated);
       } catch (e) {
         console.error(e);
         toast.error("SRT import 실패", {
@@ -52,7 +44,7 @@ export function SrtImportButton({
         });
       }
     },
-    [project, onImported],
+    [project],
   );
 
   return (
@@ -69,7 +61,7 @@ export function SrtImportButton({
           }}
         />
         <FileUp className="size-4" />
-        가사 업로드
+        <span className="hidden sm:inline">가사 </span>업로드
       </label>
     </Button>
   );

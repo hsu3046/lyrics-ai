@@ -59,7 +59,7 @@ export function SrtExportButton({ project }: { project: Project }) {
       disabled={disabled}
     >
       <FileDown className="size-4" />
-      가사 다운로드
+      <span className="hidden sm:inline">가사 </span>다운로드
     </Button>
   );
 }
